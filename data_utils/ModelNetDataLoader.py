@@ -42,7 +42,7 @@ class ModelNetDataLoader(Dataset):
         self.npoints = npoint
         self.uniform = uniform
         self.catfile = os.path.join(self.root, 'modelnet40_shape_names.txt')
-
+        
         self.cat = [line.rstrip() for line in open(self.catfile)]
         self.classes = dict(zip(self.cat, range(len(self.cat))))
         self.normal_channel = normal_channel
@@ -96,7 +96,7 @@ class ModelNetDataLoader(Dataset):
 if __name__ == '__main__':
     import torch
 
-    data = ModelNetDataLoader('/data/modelnet40_normal_resampled/',split='train', uniform=False, normal_channel=True,)
+    data = ModelNetDataLoader('drive/My Drive/pointnet/data/modelnet40_normal_resampled/',split='train', uniform=False, normal_channel=True,)
     DataLoader = torch.utils.data.DataLoader(data, batch_size=12, shuffle=True)
     for point,label in DataLoader:
         print(point.shape)
