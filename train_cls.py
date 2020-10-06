@@ -24,11 +24,15 @@ sys.path.append(os.path.join(ROOT_DIR, 'models'))
 def parse_args():
     '''PARAMETERS'''
     parser = argparse.ArgumentParser('PointNet')
-    parser.add_argument('--batch_size', type=int, default=24, help='batch size in training [default: 24]')
+    parser.add_argument('--batch_size', type=int, default=2, help='batch size in training [default: 2]')
+    parser.add_argument('--num_classes', type=int, default=6, help='number of classes [default: 2]')
     parser.add_argument('--model', default='pointnet_cls', help='model name [default: pointnet_cls]')
+    parser.add_argument('--data_path', default='./data/modelnet6_ply/', help='path to dataset root file [default: ./data/modelnet6_ply/]')
+    parser.add_argument('--data_extension', default='.npy', help='extension of data files [default: .npy')
     parser.add_argument('--epoch',  default=200, type=int, help='number of epoch in training [default: 200]')
     parser.add_argument('--learning_rate', default=0.001, type=float, help='learning rate in training [default: 0.001]')
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device [default: 0]')
+    parser.add_argument('--no_gpu', type=bool, default=False, help='set to true if no gpu run is required')
     parser.add_argument('--num_point', type=int, default=1024, help='Point Number [default: 1024]')
     parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer for training [default: Adam]')
     parser.add_argument('--log_dir', type=str, default=None, help='experiment root')
@@ -43,7 +47,8 @@ def test(model, loader, num_class=40):
         points, target = data
         target = target[:, 0]
         points = points.transpose(2, 1)
-        points, target = points.cuda(), target.cuda()
+        if not args.no_gpu:
+            points, target = points.cuda(), target.cuda()
         classifier = model.eval()
         pred, _ = classifier(points)
         pred_choice = pred.data.max(1)[1]
@@ -65,7 +70,8 @@ def main(args):
         print(str)
 
     '''HYPER PARAMETER'''
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+    if not args.no_gpu:
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
     '''CREATE DIR'''
     timestr = str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
@@ -97,23 +103,27 @@ def main(args):
 
     '''DATA LOADING'''
     log_string('Load dataset ...')
-    DATA_PATH = '../drive/My Drive/pointnet/data/modelnet40_normal_resampled/'
+    DATA_PATH = args.data_path
 
     TRAIN_DATASET = ModelNetDataLoader(root=DATA_PATH, npoint=args.num_point, split='train',
                                                      normal_channel=args.normal)
     TEST_DATASET = ModelNetDataLoader(root=DATA_PATH, npoint=args.num_point, split='test',
                                                     normal_channel=args.normal)
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=4)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=4)
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
     '''MODEL LOADING'''
-    num_class = 40
+    num_class = args.num_classes
     MODEL = importlib.import_module(args.model)
     shutil.copy('./models/%s.py' % args.model, str(experiment_dir))
     shutil.copy('./models/pointnet_util.py', str(experiment_dir))
 
-    classifier = MODEL.get_model(num_class,normal_channel=args.normal).cuda()
-    criterion = MODEL.get_loss().cuda()
+    classifier = MODEL.get_model(num_class, normal_channel=args.normal)
+    if not args.no_gpu:
+        classifier = classifier.cuda()
+    criterion = MODEL.get_loss()
+    if not args.no_gpu:
+        criterion = criterion.cuda()
 
     try:
         checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')
@@ -159,7 +169,8 @@ def main(args):
             target = target[:, 0]
 
             points = points.transpose(2, 1)
-            points, target = points.cuda(), target.cuda()
+            if not args.no_gpu:
+                points, target = points.cuda(), target.cuda()
             optimizer.zero_grad()
 
             classifier = classifier.train()
@@ -175,9 +186,8 @@ def main(args):
         train_instance_acc = np.mean(mean_correct)
         log_string('Train Instance Accuracy: %f' % train_instance_acc)
 
-
         with torch.no_grad():
-            instance_acc, class_acc = test(classifier.eval(), testDataLoader)
+            instance_acc, class_acc = test(classifier.eval(), testDataLoader, num_class=num_class)
 
             if (instance_acc >= best_instance_acc):
                 best_instance_acc = instance_acc
