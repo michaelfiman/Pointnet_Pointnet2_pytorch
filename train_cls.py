@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument('--model', default='pointnet_cls', help='model name [default: pointnet_cls]')
     parser.add_argument('--data_path', default='./data/modelnet6_ply/', help='path to dataset root file [default: ./data/modelnet6_ply/]')
     parser.add_argument('--data_extension', default='.npy', help='extension of data files [default: .npy')
+    parser.add_argument('--experiment_dir', default='./log/', help='log dir output [default: ./log/')
     parser.add_argument('--epoch',  default=200, type=int, help='number of epoch in training [default: 200]')
     parser.add_argument('--learning_rate', default=0.001, type=float, help='learning rate in training [default: 0.001]')
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device [default: 0]')
@@ -75,7 +76,7 @@ def main(args):
 
     '''CREATE DIR'''
     timestr = str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
-    experiment_dir = Path('./log/')
+    experiment_dir = Path(args.experiment_dir)
     experiment_dir.mkdir(exist_ok=True)
     experiment_dir = experiment_dir.joinpath('classification')
     experiment_dir.mkdir(exist_ok=True)
