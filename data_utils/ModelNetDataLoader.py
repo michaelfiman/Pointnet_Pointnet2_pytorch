@@ -40,11 +40,11 @@ def farthest_point_sample(point, npoint):
 
 
 class ModelNetDataLoader(Dataset):
-    def __init__(self, root, model_name='modelnet6', extension='.npy', npoint=1024, split='train', uniform=False, normal_channel=True, class_in_filename=False):
+    def __init__(self, root, split_name='modelnet6', extension='.npy', npoint=1024, split='train', uniform=False, normal_channel=True, class_in_filename=False):
         self.root = root
         self.npoints = npoint
         self.uniform = uniform
-        self.catfile = os.path.join(self.root, f'{model_name}_shape_names.txt')
+        self.catfile = os.path.join(self.root, f'{split_name}_shape_names.txt')
         self.extension = extension
 
         self.cat = [line.rstrip() for line in open(self.catfile)]
@@ -53,10 +53,10 @@ class ModelNetDataLoader(Dataset):
 
         if class_in_filename:
             shape_ids = {}
-            shape_ids['train'] = [line.rstrip() for line in open(os.path.join(self.root, f'{model_name}_train.txt'))]
-            shape_ids['test'] = [line.rstrip() for line in open(os.path.join(self.root, f'{model_name}_test.txt'))]
+            shape_ids['train'] = [line.rstrip() for line in open(os.path.join(self.root, f'{split_name}_train.txt'))]
+            shape_ids['validation'] = [line.rstrip() for line in open(os.path.join(self.root, f'{split_name}_validation.txt'))]
 
-            assert (split == 'train' or split == 'test')
+            assert (split == 'train' or split == 'validation')
             shape_names = ['_'.join(x.split('_')[0:-1]) for x in shape_ids[split]]
             # list of (shape_name, shape_txt_file_path) tuple
             self.datapath = [(shape_names[i], os.path.join(self.root, shape_names[i], shape_ids[split][i]) + extension) for i
@@ -64,7 +64,7 @@ class ModelNetDataLoader(Dataset):
 
         else:
             self.datapath = [(os.path.split(filename)[0], os.path.join(self.root, filename))
-                             for filename in [line.rstrip() for line in open(os.path.join(self.root, f'{model_name}_{split}.txt'))]]
+                             for filename in [line.rstrip() for line in open(os.path.join(self.root, f'{split_name}_{split}.txt'))]]
 
         print('The size of %s data is %d' % (split, len(self.datapath)))
 

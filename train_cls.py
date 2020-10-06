@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument('--model', default='pointnet_cls', help='model name [default: pointnet_cls]')
     parser.add_argument('--data_path', default='./data/modelnet6_ply/', help='path to dataset root file [default: ./data/modelnet6_ply/]')
     parser.add_argument('--data_extension', default='.npy', help='extension of data files [default: .npy')
+    parser.add_argument('--split_name', default='modelnet6', help='split files used from dataset folder [default: modelnet6')
     parser.add_argument('--experiment_dir', default='./log/', help='log dir output [default: ./log/')
     parser.add_argument('--epoch',  default=200, type=int, help='number of epoch in training [default: 200]')
     parser.add_argument('--learning_rate', default=0.001, type=float, help='learning rate in training [default: 0.001]')
@@ -106,10 +107,12 @@ def main(args):
     log_string('Load dataset ...')
     DATA_PATH = args.data_path
 
-    TRAIN_DATASET = ModelNetDataLoader(root=DATA_PATH, npoint=args.num_point, split='train',
-                                                     normal_channel=args.normal)
-    TEST_DATASET = ModelNetDataLoader(root=DATA_PATH, npoint=args.num_point, split='validation',
-                                                    normal_channel=args.normal)
+    class_in_filename = False if args.data_extension == ".npy" else True
+
+    TRAIN_DATASET = ModelNetDataLoader(root=DATA_PATH, split_name=args.split_name, extension=args.data_extension, npoint=args.num_point, split='train',
+                                                     normal_channel=args.normal, class_in_filename=class_in_filename)
+    TEST_DATASET = ModelNetDataLoader(root=DATA_PATH, split_name=args.split_name, extension=args.data_extension, npoint=args.num_point, split='validation',
+                                                    normal_channel=args.normal, class_in_filename=class_in_filename)
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=0)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
@@ -160,7 +163,10 @@ def main(args):
         log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.epoch))
 
         scheduler.step()
-        for batch_id, data in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
+        mean_correct = []
+        batch_tqdm = tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9)
+        total_loss = 0
+        for batch_id, data in batch_tqdm:
             points, target = data
             points = points.data.numpy()
             points = provider.random_point_dropout(points)
@@ -183,6 +189,9 @@ def main(args):
             loss.backward()
             optimizer.step()
             global_step += 1
+            total_loss += loss
+            mean_loss = total_loss / (batch_id + 1)
+            batch_tqdm.set_description(f"loss {mean_loss}, batch ({batch_id}/{len(trainDataLoader)})")
 
         train_instance_acc = np.mean(mean_correct)
         log_string('Train Instance Accuracy: %f' % train_instance_acc)
