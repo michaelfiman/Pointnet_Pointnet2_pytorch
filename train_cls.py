@@ -208,7 +208,7 @@ def main(args):
             mean_loss = total_loss / (batch_id + 1)
             batch_tqdm.set_description(f"loss {mean_loss}, batch ({batch_id}/{len(trainDataLoader)})")
             preds_likelihood = torch.exp(pred)
-            predictions_likelihood_tot[epoch*trainDataLoader.batch_size:(batch_id+1)*trainDataLoader.batch_size] = preds_likelihood
+            predictions_likelihood_tot[batch_id*trainDataLoader.batch_size:(batch_id+1)*trainDataLoader.batch_size] = preds_likelihood
 
         train_instance_acc = np.mean(mean_correct)
         log_string('Train Instance Accuracy: %f' % train_instance_acc)
