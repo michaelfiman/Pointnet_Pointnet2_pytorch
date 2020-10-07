@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device [default: 0]')
     parser.add_argument('--no_gpu', type=bool, default=False, help='set to true if no gpu run is required')
     parser.add_argument('--num_point', type=int, default=1024, help='Point Number [default: 1024]')
+    parser.add_argument('--uniform', type=bool, default=False, help='set to true if uniform distribution should be used')
     parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer for training [default: Adam]')
     parser.add_argument('--log_dir', type=str, default=None, help='experiment root')
     parser.add_argument('--decay_rate', type=float, default=1e-4, help='decay rate [default: 1e-4]')
@@ -123,10 +124,10 @@ def main(args):
     class_in_filename = False if args.data_extension == ".npy" else True
 
     TRAIN_DATASET = ModelNetDataLoader(root=DATA_PATH, split_name=args.split_name, extension=args.data_extension, npoint=args.num_point, split='train',
-                                                     normal_channel=args.normal, class_in_filename=class_in_filename)
+                                                     normal_channel=args.normal, class_in_filename=class_in_filename, uniform=args.uniform)
     TEST_DATASET = ModelNetDataLoader(root=DATA_PATH, split_name=args.split_name, extension=args.data_extension, npoint=args.num_point, split='validation',
-                                                    normal_channel=args.normal, class_in_filename=class_in_filename)
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=0)
+                                                    normal_channel=args.normal, class_in_filename=class_in_filename, uniform=args.uniform)
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=4)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
     '''MODEL LOADING'''
@@ -163,7 +164,7 @@ def main(args):
     else:
         optimizer = torch.optim.SGD(classifier.parameters(), lr=0.01, momentum=0.9)
 
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.7)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.9, patience=50, min_lr=0.000001)
     global_epoch = 0
     global_step = 0
     best_instance_acc = 0.0
@@ -175,10 +176,11 @@ def main(args):
     for epoch in range(start_epoch,args.epoch):
         log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.epoch))
 
-        scheduler.step()
         mean_correct = []
         batch_tqdm = tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9)
         total_loss = 0
+        predictions_likelihood_tot = torch.zeros([len(trainDataLoader.dataset), num_class])
+
         for batch_id, data in batch_tqdm:
             points, target = data
             points = points.data.numpy()
@@ -205,14 +207,19 @@ def main(args):
             total_loss += loss
             mean_loss = total_loss / (batch_id + 1)
             batch_tqdm.set_description(f"loss {mean_loss}, batch ({batch_id}/{len(trainDataLoader)})")
+            preds_likelihood = torch.exp(pred)
+            predictions_likelihood_tot[epoch*trainDataLoader.batch_size:(batch_id+1)*trainDataLoader.batch_size] = preds_likelihood
 
         train_instance_acc = np.mean(mean_correct)
         log_string('Train Instance Accuracy: %f' % train_instance_acc)
         train_writer.add_scalar('Loss', mean_loss, epoch)
         train_writer.add_scalar('Accuracy', train_instance_acc, epoch)
+        for cls in range(num_class):
+            train_writer.add_histogram(f"class_{cls}", predictions_likelihood_tot[:, cls], epoch)
 
         with torch.no_grad():
             instance_acc, class_acc, val_loss = test(classifier.eval(), testDataLoader, criterion, num_class=num_class)
+            scheduler.step(val_loss)
             val_writer.add_scalar('Loss', val_loss, epoch)
             val_writer.add_scalar('Accuracy', instance_acc, epoch)
             val_writer.add_scalar('Class_Accuracy', class_acc, epoch)
