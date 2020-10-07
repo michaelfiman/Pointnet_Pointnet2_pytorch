@@ -15,6 +15,7 @@ import sys
 import provider
 import importlib
 import shutil
+from torch.utils.tensorboard import SummaryWriter
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -42,17 +43,21 @@ def parse_args():
     parser.add_argument('--normal', action='store_true', default=False, help='Whether to use normal information [default: False]')
     return parser.parse_args()
 
-def test(model, loader, num_class=40):
+def test(model, loader, criterion, num_class=40):
     mean_correct = []
     class_acc = np.zeros((num_class,3))
-    for j, data in tqdm(enumerate(loader), total=len(loader)):
+    tot_loss = 0
+    batch_tqdm = tqdm(enumerate(loader), total=len(loader))
+    for j, data in batch_tqdm:
         points, target = data
         target = target[:, 0]
         points = points.transpose(2, 1)
         if not args.no_gpu:
             points, target = points.cuda(), target.cuda()
         classifier = model.eval()
-        pred, _ = classifier(points)
+        pred,trans_feat = classifier(points)
+        loss = criterion(pred, target.long(), trans_feat)
+        tot_loss += loss
         pred_choice = pred.data.max(1)[1]
         for cat in np.unique(target.cpu()):
             classacc = pred_choice[target==cat].eq(target[target==cat].long().data).cpu().sum()
@@ -60,10 +65,12 @@ def test(model, loader, num_class=40):
             class_acc[cat,1]+=1
         correct = pred_choice.eq(target.long().data).cpu().sum()
         mean_correct.append(correct.item()/float(points.size()[0]))
+        mean_loss = tot_loss/(j+1)
+        batch_tqdm.set_description(f"loss {mean_loss}, batch ({j}/{len(loader)})")
     class_acc[:,2] =  class_acc[:,0]/ class_acc[:,1]
     class_acc = np.mean(class_acc[:,2])
     instance_acc = np.mean(mean_correct)
-    return instance_acc, class_acc
+    return instance_acc, class_acc, mean_loss
 
 
 def main(args):
@@ -90,6 +97,8 @@ def main(args):
     checkpoints_dir.mkdir(exist_ok=True)
     log_dir = experiment_dir.joinpath('logs/')
     log_dir.mkdir(exist_ok=True)
+    tensorboard_dir = experiment_dir.joinpath('tensorboard/')
+    tensorboard_dir.mkdir(exist_ok=True)
 
     '''LOG'''
     args = parse_args()
@@ -102,6 +111,10 @@ def main(args):
     logger.addHandler(file_handler)
     log_string('PARAMETER ...')
     log_string(args)
+
+    '''TENSORBOARD'''
+    train_writer = SummaryWriter(tensorboard_dir.joinpath("train"))
+    val_writer = SummaryWriter(tensorboard_dir.joinpath("validation"))
 
     '''DATA LOADING'''
     log_string('Load dataset ...')
@@ -192,12 +205,16 @@ def main(args):
             total_loss += loss
             mean_loss = total_loss / (batch_id + 1)
             batch_tqdm.set_description(f"loss {mean_loss}, batch ({batch_id}/{len(trainDataLoader)})")
-
+            train_writer.add_scalar('Loss/train', mean_loss, global_step)
+            train_writer.add_scalar('Accuracy/train', mean_correct, global_step)
         train_instance_acc = np.mean(mean_correct)
         log_string('Train Instance Accuracy: %f' % train_instance_acc)
 
         with torch.no_grad():
-            instance_acc, class_acc = test(classifier.eval(), testDataLoader, num_class=num_class)
+            instance_acc, class_acc, val_loss = test(classifier.eval(), testDataLoader, criterion, num_class=num_class)
+            val_writer.add_scalar('Loss/validation', val_loss, global_step)
+            val_writer.add_scalar('Accuracy/validation', instance_acc, global_step)
+            val_writer.add_scalar('Class_Accuracy/validation', class_acc, global_step)
 
             if (instance_acc >= best_instance_acc):
                 best_instance_acc = instance_acc
