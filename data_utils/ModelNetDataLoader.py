@@ -96,7 +96,7 @@ class ModelNetDataLoader(Dataset):
         if self.uniform:
             point_set = farthest_point_sample(point_set, self.npoints)
         else:
-            point_set = point_set[0:self.npoints, :]
+            point_set = point_set[-self.npoints:, :]
 
         point_set[:, 0:3] = pc_normalize(point_set[:, 0:3])
 
