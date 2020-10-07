@@ -205,16 +205,17 @@ def main(args):
             total_loss += loss
             mean_loss = total_loss / (batch_id + 1)
             batch_tqdm.set_description(f"loss {mean_loss}, batch ({batch_id}/{len(trainDataLoader)})")
-            train_writer.add_scalar('Loss/train', mean_loss, global_step)
-            train_writer.add_scalar('Accuracy/train', mean_correct, global_step)
+
         train_instance_acc = np.mean(mean_correct)
         log_string('Train Instance Accuracy: %f' % train_instance_acc)
+        train_writer.add_scalar('Loss', mean_loss, epoch)
+        train_writer.add_scalar('Accuracy', train_instance_acc, epoch)
 
         with torch.no_grad():
             instance_acc, class_acc, val_loss = test(classifier.eval(), testDataLoader, criterion, num_class=num_class)
-            val_writer.add_scalar('Loss/validation', val_loss, global_step)
-            val_writer.add_scalar('Accuracy/validation', instance_acc, global_step)
-            val_writer.add_scalar('Class_Accuracy/validation', class_acc, global_step)
+            val_writer.add_scalar('Loss', val_loss, epoch)
+            val_writer.add_scalar('Accuracy', instance_acc, epoch)
+            val_writer.add_scalar('Class_Accuracy', class_acc, epoch)
 
             if (instance_acc >= best_instance_acc):
                 best_instance_acc = instance_acc
