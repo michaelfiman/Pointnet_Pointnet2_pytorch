@@ -35,7 +35,7 @@ def parse_args():
     parser.add_argument('--epoch',  default=200, type=int, help='number of epoch in training [default: 200]')
     parser.add_argument('--learning_rate', default=0.001, type=float, help='learning rate in training [default: 0.001]')
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device [default: 0]')
-    parser.add_argument('--no_gpu', type=bool, default=False, help='set to true if no gpu run is required')
+    parser.add_argument('--reduced_computation', type=bool, default=False, help='set to true if no gpu run is required and num_workers should be 0')
     parser.add_argument('--num_point', type=int, default=1024, help='Point Number [default: 1024]')
     parser.add_argument('--uniform', type=bool, default=False, help='set to true if uniform distribution should be used')
     parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer for training [default: Adam]')
@@ -43,6 +43,7 @@ def parse_args():
     parser.add_argument('--decay_rate', type=float, default=1e-4, help='decay rate [default: 1e-4]')
     parser.add_argument('--normal', action='store_true', default=False, help='Whether to use normal information [default: False]')
     parser.add_argument('--augment', type=bool, default=False, help='whether to use augmentation: random point dropout, random scale, random shift')
+    parser.add_argument('--reduced_resolution_voxel_size', type=float, default=-1., help='choose a positive number to reduce point cloud resolution with open3d before reducing it uniformly. Can save preprocess time. Defalt is 100')
     return parser.parse_args()
 
 def test(model, loader, criterion, num_class=40):
@@ -54,7 +55,7 @@ def test(model, loader, criterion, num_class=40):
         points, target = data
         target = target[:, 0]
         points = points.transpose(2, 1)
-        if not args.no_gpu:
+        if not args.reduced_computation:
             points, target = points.cuda(), target.cuda()
         classifier = model.eval()
         pred,trans_feat = classifier(points)
@@ -81,8 +82,12 @@ def main(args):
         print(str)
 
     '''HYPER PARAMETER'''
-    if not args.no_gpu:
+    if not args.reduced_computation:
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+        num_workers = 8
+    else:
+        num_workers = 0
+
 
     '''CREATE DIR'''
     timestr = str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
@@ -125,11 +130,11 @@ def main(args):
     class_in_filename = False if args.data_extension == ".npy" else True
 
     TRAIN_DATASET = ModelNetDataLoader(root=DATA_PATH, split_name=args.split_name, extension=args.data_extension, npoint=args.num_point, split='train',
-                                                     normal_channel=args.normal, class_in_filename=class_in_filename, uniform=args.uniform)
+                                       normal_channel=args.normal, class_in_filename=class_in_filename, uniform=args.uniform, voxel_size=args.reduced_resolution_voxel_size)
     TEST_DATASET = ModelNetDataLoader(root=DATA_PATH, split_name=args.split_name, extension=args.data_extension, npoint=args.num_point, split='validation',
-                                                    normal_channel=args.normal, class_in_filename=class_in_filename, uniform=args.uniform)
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=4)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=0)
+                                      normal_channel=args.normal, class_in_filename=class_in_filename, uniform=args.uniform, voxel_size=args.reduced_resolution_voxel_size)
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=num_workers)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=num_workers)
 
     '''MODEL LOADING'''
     num_class = args.num_classes
@@ -138,10 +143,10 @@ def main(args):
     shutil.copy('./models/pointnet_util.py', str(experiment_dir))
 
     classifier = MODEL.get_model(num_class, normal_channel=args.normal)
-    if not args.no_gpu:
+    if not args.reduced_computation:
         classifier = classifier.cuda()
     criterion = MODEL.get_loss()
-    if not args.no_gpu:
+    if not args.reduced_computation:
         criterion = criterion.cuda()
 
     try:
@@ -193,7 +198,7 @@ def main(args):
             target = target[:, 0]
 
             points = points.transpose(2, 1)
-            if not args.no_gpu:
+            if not args.reduced_computation:
                 points, target = points.cuda(), target.cuda()
             optimizer.zero_grad()
 

@@ -40,16 +40,18 @@ def farthest_point_sample(point, npoint):
 
 
 class ModelNetDataLoader(Dataset):
-    def __init__(self, root, split_name='modelnet6', extension='.npy', npoint=1024, split='train', uniform=False, normal_channel=True, class_in_filename=False):
+    def __init__(self, root, split_name='modelnet6', extension='.npy', npoint=1024, split='train', uniform=False, normal_channel=True, class_in_filename=False, voxel_size=-1.):
         self.root = root
         self.npoints = npoint
         self.uniform = uniform
         self.catfile = os.path.join(self.root, f'{split_name}_shape_names.txt')
         self.extension = extension
+        self.voxel_size = voxel_size
 
         self.cat = [line.rstrip() for line in open(self.catfile)]
         self.classes = dict(zip(self.cat, range(len(self.cat))))
         self.normal_channel = normal_channel
+
 
         if class_in_filename:
             shape_ids = {}
@@ -93,6 +95,10 @@ class ModelNetDataLoader(Dataset):
         cls = self.classes[self.datapath[index][0]]
         cls = np.array([cls]).astype(np.int32)
         point_set = self.read_file_by_extension(fn[1])
+
+        if self.voxel_size > 0:
+            point_set = self.pointcloud_down_sample(point_set)
+
         if self.uniform:
             point_set = farthest_point_sample(point_set, self.npoints)
         else:
@@ -104,6 +110,13 @@ class ModelNetDataLoader(Dataset):
             point_set = point_set[:, 0:3]
 
         return point_set, cls
+
+    def pointcloud_down_sample(self, point_set):
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(point_set)
+        pcd = pcd.voxel_down_sample(voxel_size=self.voxel_size)
+        point_set = np.asanyarray(pcd.points).astype(np.float32)
+        return point_set
 
     def __getitem__(self, index):
         return self._get_item(index)
