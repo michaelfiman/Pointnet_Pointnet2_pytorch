@@ -42,6 +42,7 @@ def parse_args():
     parser.add_argument('--log_dir', type=str, default=None, help='experiment root')
     parser.add_argument('--decay_rate', type=float, default=1e-4, help='decay rate [default: 1e-4]')
     parser.add_argument('--normal', action='store_true', default=False, help='Whether to use normal information [default: False]')
+    parser.add_argument('--augment', type=bool, default=False, help='whether to use augmentation: random point dropout, random scale, random shift')
     return parser.parse_args()
 
 def test(model, loader, criterion, num_class=40):
@@ -184,9 +185,10 @@ def main(args):
         for batch_id, data in batch_tqdm:
             points, target = data
             points = points.data.numpy()
-            points = provider.random_point_dropout(points)
-            points[:,:, 0:3] = provider.random_scale_point_cloud(points[:,:, 0:3])
-            points[:,:, 0:3] = provider.shift_point_cloud(points[:,:, 0:3])
+            if args.augment:
+                points = provider.random_point_dropout(points)
+                points[:,:, 0:3] = provider.random_scale_point_cloud(points[:,:, 0:3])
+                points[:,:, 0:3] = provider.shift_point_cloud(points[:,:, 0:3])
             points = torch.Tensor(points)
             target = target[:, 0]
 
